@@ -2,11 +2,13 @@
 #include <EtherCard.h>
 int closedelay; //le delais de fermeture
 int opendelay; // le delais d'ouverture
-int seuil; // en dessous de cette valeur le photocapteur est dans l'obscurité
-int photosensor = A0;//la pin du capteur photosensible
+boolean door;
 int button = 5;//la pin du boutton
 int openpin = 9;//la pin de la sortie du signal pour ouvrir la porte
 int closepin = 7;//la pin de la sortie du signal pour fermer la porte
+int stoped = 4;
+int stopstate = digitalRead(stoped);
+int buttonstate = digitalRead(button);
 #define STATIC 1
 #if STATIC
 static byte myip[] = { 192,168,1,200 };//ip du systeme en local
@@ -50,6 +52,7 @@ char pageclose[] PROGMEM =
 ;//la page html
 
 void setup(){
+  door = false;
   Serial.begin(9600);
   pinMode(button,INPUT);
   pinMode(closepin,OUTPUT);
@@ -69,52 +72,61 @@ void setup(){
   ether.printIp("DNS: ", ether.dnsip); 
   
 }
+boolean manualdoor () {
+  if (buttonstate == LOW) {
+   if (buttonstate == HIGH) {
+    if (door) {
+      digitalWrite(closepin,HIGH);
+      delay(closedelay);
+      digitalWrite(closepin,LOW);
+      return false;
+    }
+    else if (!(door)) {
+      digitalWrite(openpin,HIGH);
+      delay(opendelay);
+      digitalWrite(openpin,LOW);
+      return true;
+    }
+   }
+   }
+}
 
 void loop(){
   while(true) {
-    int photostate = analogRead(photosensor);
     word len = ether.packetReceive();
     word pos = ether.packetLoop(len);
-     if (photostate > seuil) {
+     if (!(door)) {
        if (ether.packetLoop(ether.packetReceive())) {
         memcpy_P(ether.tcpOffset(), pageclose, sizeof pageclose);
         ether.httpServerReply(sizeof pageclose - 1);
        }
       }
-      if (photostate < seuil) {
+      if (door) {
    if(ether.packetLoop(ether.packetReceive())) {
      memcpy_P(ether.tcpOffset(),pageopen,sizeof pageopen);
      ether.httpServerReply(sizeof pageopen - 1);
    }
  }
-   int buttonstate = digitalRead(button);
-   if (buttonstate == LOW) {
-   if (buttonstate == HIGH) {
-    if (photostate > seuil) {//condition pour fermeture "manuel" de la porte
-      digitalWrite(closepin,HIGH);
-      delay(closedelay);
-      digitalWrite(closepin,LOW);
-    }
-    else if (photostate < seuil) {//condition pour ouverture "manuel" de la porte
-      digitalWrite(openpin,HIGH);
-      delay(opendelay);
-      digitalWrite(openpin,LOW);
-    }
-   }
-   }
+  door = manualdoor();
   if(strstr((char *)Ethernet::buffer + pos, "GET /?door=open") != 0) { // la requette get pour ouvrir la porte
-      if (photostate < seuil) {//on verifie si la porte était fermer
+      if (!(door)) {//on verifie si la porte était fermer
         digitalWrite(openpin,HIGH);
         delay(opendelay);
         digitalWrite(openpin,LOW);
       }
   }
   if(strstr((char *)Ethernet::buffer + pos,"GET /?door=close") != 0) {//et la requette get pour la fermer
-    if (photostate > seuil) {//on verifie si la porte était ouverte
+    if (door) {//on verifie si la porte était ouverte
       digitalWrite(closepin,HIGH);
       delay(closedelay);
       digitalWrite(closepin,LOW);
     }
   }
+  if (stopstate == HIGH) {
+    digitalWrite(closepin,HIGH);
+    delay(closedelay);
+    digitalWrite(closepin,LOW);
   }
+  }
+  
 }
